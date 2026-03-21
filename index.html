@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <meta name="theme-color" content="#0D0D1A"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="عاداتي"/>
+  <link rel="manifest" href="./manifest.json"/>
+  <link rel="apple-touch-icon" href="./icon-192.png"/>
+  <title>مُتابع العادات</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+    body{font-family:'Tajawal','Segoe UI',Tahoma,sans-serif;background:linear-gradient(150deg,#0D0D1A 0%,#111827 100%);min-height:100vh;color:#fff;overscroll-behavior:none}
+    input,button,select{font-family:inherit}
+    @keyframes slideUp{from{transform:translateY(80px);opacity:0}to{transform:translateY(0);opacity:1}}
+    ::-webkit-scrollbar{display:none}
+    *{scrollbar-width:none}
+  </style>
+</head>
+<body>
+<div id="app"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script type="text/babel">
+const{useState,useMemo,useEffect}=React;
+
+const WEEK_DAYS=["السبت","الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس"];
+const WEEK_DAY_JS=[6,0,1,2,3,4];
+const MONTHS=["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+const ICONS=["🏃","📚","💧","🧘","🥗","😴","✍️","🎯","💪","🎨","🎵","🌿","💊","🐕","🧹","🎮","🚴","🏋️","🎤","🖥️"];
+const COLORS=["#FF6B6B","#4ECDC4","#45B7D1","#96CEB4","#DDA0DD","#F7DC6F","#FF8C69","#87CEEB","#FFB347","#98D8C8","#C3A6FF","#F9A8D4"];
+const TABS=["اليوم","الأسبوع","الإحصائيات","الإعدادات"];
+
+function getWeekStart(dateStr){
+  const d=new Date(dateStr),day=d.getDay(),diff=day===6?0:day+1,sat=new Date(d);
+  sat.setDate(d.getDate()-diff);return sat.toISOString().split("T")[0];
+}
+function getWeekDates(ws){
+  return Array.from({length:6},(_,i)=>{const d=new Date(ws);d.setDate(d.getDate()+i);return d.toISOString().split("T")[0];});
+}
+function fmtDate(str){if(!str)return"";const d=new Date(str);return`${d.getDate()} ${MONTHS[d.getMonth()]}`;}
+
+function CircleProgress({percent,size,stroke,color}){
+  const r=(size-stroke)/2,circ=2*Math.PI*r,offset=circ-Math.min(percent/100,1)*circ,p=Math.min(Math.round(percent),100);
+  return(
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke}/>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+        strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
+        transform={`rotate(-90 ${size/2} ${size/2})`}
+        style={{transition:"stroke-dashoffset 0.7s cubic-bezier(.4,0,.2,1)"}}/>
+      <text x={size/2} y={size/2+1} textAnchor="middle" dominantBaseline="middle"
+        fill={color} fontSize={size*0.19} fontWeight="900" fontFamily="Tajawal,sans-serif">{p}%</text>
+    </svg>
+  );
+}
+
+function MiniBar({value,max,color,label,sublabel}){
+  const pct=max>0?Math.min(value/max*100,100):0;
+  return(
+    <div style={{marginBottom:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+        <span style={{fontSize:11,color:"rgba(255,255,255,0.6)",fontWeight:600}}>{label}</span>
+        <span style={{fontSize:11,fontWeight:800,color:pct>=100?"#4ECDC4":pct>=60?color:"rgba(255,255,255,0.5)"}}>{sublabel}</span>
+      </div>
+      <div style={{height:7,background:"rgba(255,255,255,0.07)",borderRadius:4,overflow:"hidden"}}>
+        <div style={{height:"100%",width:pct+"%",background:`linear-gradient(90deg,${color},${color}99)`,borderRadius:4,transition:"width 0.7s cubic-bezier(.4,0,.2,1)"}}/>
+      </div>
+    </div>
+  );
+}
+
+function BarChart({data,color}){
+  const max=Math.max(...data.map(d=>d.value),1);
+  return(
+    <div style={{display:"flex",alignItems:"flex-end",gap:4,height:90}}>
+      {data.map((d,i)=>(
+        <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+          {d.value>0&&<div style={{fontSize:8,color:color,fontWeight:700}}>{d.value}</div>}
+          <div style={{width:"100%",background:color,borderRadius:"3px 3px 0 0",opacity:d.isCurrent?1:0.55,
+            height:Math.max((d.value/max)*68,d.value>0?3:0),transition:"height 0.5s",
+            border:d.isCurrent?`1px solid ${color}`:"none"}}/>
+          <div style={{fontSize:8,color:d.isCurrent?"rgba(255,255,255,0.8)":"rgba(255,255,255,0.3)",fontWeight:d.isCurrent?700:400}}>{d.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function App(){
+  const today=new Date().toISOString().split("T")[0];
+  const todayDayJS=new Date().getDay();
+  const curWeekStart=getWeekStart(today);
+  const firstOfMonth=(()=>{const d=new Date();d.setDate(1);return getWeekStart(d.toISOString().split("T")[0]);})();
+
+  const[habits,setHabits]=useState(()=>{
+    try{const s=localStorage.getItem('habitsv2');return s?JSON.parse(s):[
+      {id:1,name:"شرب الماء",icon:"💧",color:"#45B7D1",weeklyGoal:14,unit:"كأس",progress:{}},
+      {id:2,name:"القراءة",icon:"📚",color:"#FF6B6B",weeklyGoal:100,unit:"صفحة",progress:{}},
+      {id:3,name:"التمرين",icon:"🏃",color:"#4ECDC4",weeklyGoal:5,unit:"ساعة",progress:{}},
+    ];}catch(e){return[];}
+  });
+
+  useEffect(()=>{try{localStorage.setItem('habitsv2',JSON.stringify(habits));}catch(e){};},[habits]);
+
+  const[activeTab,setActiveTab]=useState(0);
+  const[selWeek,setSelWeek]=useState(curWeekStart);
+  const[showAdd,setShowAdd]=useState(false);
+  const[editProg,setEditProg]=useState(null);
+  const[progInput,setProgInput]=useState("");
+  const[newHabit,setNewHabit]=useState({name:"",icon:"🎯",color:COLORS[0],weeklyGoal:"",unit:""});
+  const[statsFrom,setStatsFrom]=useState(firstOfMonth);
+  const[statsTo,setStatsTo]=useState(curWeekStart);
+  const[statsPeriod,setStatsPeriod]=useState("month");
+  const[statsHabit,setStatsHabit]=useState("all");
+
+  const weekDates=getWeekDates(selWeek);
+  const getVal=(habit,date)=>parseFloat(habit.progress[date]||0);
+  const getWeekTotal=(habit,ws)=>getWeekDates(ws).reduce((a,d)=>a+getVal(habit,d),0);
+  const getWeekPct=(habit,ws)=>habit.weeklyGoal>0?getWeekTotal(habit,ws)/habit.weeklyGoal*100:0;
+
+  const saveProgress=()=>{
+    if(!editProg)return;
+    const val=parseFloat(progInput)||0;
+    setHabits(prev=>prev.map(h=>{
+      if(h.id!==editProg.habitId)return h;
+      return{...h,progress:{...h.progress,[editProg.date]:val}};
+    }));
+    setEditProg(null);setProgInput("");
+  };
+
+  const addHabit=()=>{
+    if(!newHabit.name.trim()||!newHabit.weeklyGoal)return;
+    setHabits(prev=>[...prev,{id:Date.now(),...newHabit,weeklyGoal:parseFloat(newHabit.weeklyGoal),progress:{}}]);
+    setNewHabit({name:"",icon:"🎯",color:COLORS[0],weeklyGoal:"",unit:""});
+    setShowAdd(false);
+  };
+
+  const deleteHabit=(id)=>{if(confirm("حذف هذه العادة؟"))setHabits(prev=>prev.filter(h=>h.id!==id));};
+  const prevWeek=()=>{const d=new Date(selWeek);d.setDate(d.getDate()-7);setSelWeek(d.toISOString().split("T")[0]);};
+  const nextWeek=()=>{const d=new Date(selWeek);d.setDate(d.getDate()+7);const ns=d.toISOString().split("T")[0];if(ns<=curWeekStart)setSelWeek(ns);};
+
+  const getWeeksInRange=()=>{
+    const ws=[];let cur=new Date(statsFrom);
+    while(cur.toISOString().split("T")[0]<=statsTo){ws.push(cur.toISOString().split("T")[0]);cur.setDate(cur.getDate()+7);}
+    return ws;
+  };
+  const statsWeeks=useMemo(()=>getWeeksInRange(),[statsFrom,statsTo]);
+
+  const setStatsPd=(p)=>{
+    setStatsPeriod(p);const now=new Date();
+    if(p==="month"){const d=new Date(now);d.setDate(d.getDate()-27);setStatsFrom(getWeekStart(d.toISOString().split("T")[0]));setStatsTo(curWeekStart);}
+    else if(p==="3m"){const d=new Date(now);d.setDate(d.getDate()-83);setStatsFrom(getWeekStart(d.toISOString().split("T")[0]));setStatsTo(curWeekStart);}
+    else if(p==="6m"){const d=new Date(now);d.setDate(d.getDate()-180);setStatsFrom(getWeekStart(d.toISOString().split("T")[0]));setStatsTo(curWeekStart);}
+  };
+
+  const todayDayIdx=WEEK_DAY_JS.indexOf(todayDayJS);
+  const statsHabits=statsHabit==="all"?habits:habits.filter(h=>h.id===parseInt(statsHabit));
+  const overallPct=habits.length?habits.reduce((a,h)=>a+Math.min(getWeekPct(h,curWeekStart),100),0)/habits.length:0;
+
+  const S={
+    card:{background:"rgba(255,255,255,0.05)",borderRadius:18,padding:16,marginBottom:12,border:"1px solid rgba(255,255,255,0.08)"},
+    inp:{width:"100%",padding:"11px 14px",borderRadius:10,border:"1.5px solid rgba(255,255,255,0.15)",fontSize:14,color:"#fff",background:"rgba(255,255,255,0.08)",outline:"none",fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"},
+    lbl:{fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.45)",marginBottom:5,display:"block"},
+    pd:(a,c)=>({padding:"7px 14px",borderRadius:20,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",background:a?(c||"#4ECDC4"):"rgba(255,255,255,0.08)",color:a?"#0A2540":"rgba(255,255,255,0.5)",transition:"all 0.2s"}),
+  };
+
+  return(
+    <div style={{minHeight:"100vh",background:"linear-gradient(150deg,#0D0D1A,#111827)",fontFamily:"'Tajawal','Segoe UI',sans-serif",direction:"rtl",color:"#fff"}}>
+
+      {/* HEADER */}
+      <div style={{background:"rgba(255,255,255,0.02)",backdropFilter:"blur(20px)",borderBottom:"1px solid rgba(255,255,255,0.06)",position:"sticky",top:0,zIndex:100}}>
+        <div style={{maxWidth:540,margin:"0 auto",padding:"14px 16px 0"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div>
+              <div style={{fontSize:19,fontWeight:900}}>✨ مُتابع العادات</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:1}}>
+                {todayDayIdx>=0?`${WEEK_DAYS[todayDayIdx]}، ${fmtDate(today)}`:"الجمعة — يوم راحة 😊"}
+              </div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <CircleProgress percent={overallPct} size={44} stroke={4} color="#4ECDC4"/>
+              <button onClick={()=>setShowAdd(true)} style={{background:"linear-gradient(135deg,#4ECDC4,#45B7D1)",border:"none",borderRadius:12,width:40,height:40,cursor:"pointer",fontSize:20,color:"#fff",boxShadow:"0 4px 16px rgba(78,205,196,0.4)",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:1}}>
+            {TABS.map((t,i)=>(
+              <button key={i} onClick={()=>setActiveTab(i)} style={{flex:1,padding:"9px 2px",border:"none",cursor:"pointer",borderRadius:"8px 8px 0 0",fontWeight:700,fontSize:11,background:activeTab===i?"rgba(78,205,196,0.1)":"transparent",color:activeTab===i?"#4ECDC4":"rgba(255,255,255,0.35)",fontFamily:"inherit",borderBottom:activeTab===i?"2px solid #4ECDC4":"2px solid transparent",transition:"all 0.2s"}}>{t}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{maxWidth:540,margin:"0 auto",padding:"14px 14px"}}>
+
+        {/* TAB 0: اليوم */}
+        {activeTab===0&&(
+          <div>
+            {habits.length===0&&<div style={{textAlign:"center",padding:"70px 0",color:"rgba(255,255,255,0.25)"}}>
+              <div style={{fontSize:52}}>🎯</div><div style={{marginTop:12,fontSize:14}}>اضغط + لإضافة عادة</div>
+            </div>}
+            {habits.map(h=>{
+              const todayVal=getVal(h,today),weekTotal=getWeekTotal(h,curWeekStart),weekPct=getWeekPct(h,curWeekStart),remaining=Math.max(0,h.weeklyGoal-weekTotal);
+              const isEditing=editProg?.habitId===h.id&&editProg?.date===today;
+              return(
+                <div key={h.id} style={{...S.card,border:`1px solid ${h.color}33`}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+                    <div style={{width:46,height:46,borderRadius:13,background:h.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0,boxShadow:`0 0 0 1px ${h.color}44`}}>{h.icon}</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:800,fontSize:15}}>{h.name}</div>
+                      <div style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:2}}>الهدف: {h.weeklyGoal} {h.unit} / أسبوع</div>
+                    </div>
+                    <CircleProgress percent={weekPct} size={52} stroke={5} color={h.color}/>
+                  </div>
+                  <div style={{marginBottom:12}}>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"rgba(255,255,255,0.3)",marginBottom:4}}>
+                      <span>التقدم الأسبوعي</span><span>{weekTotal} / {h.weeklyGoal} {h.unit}</span>
+                    </div>
+                    <div style={{height:6,background:"rgba(255,255,255,0.07)",borderRadius:4,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:Math.min(weekPct,100)+"%",background:`linear-gradient(90deg,${h.color},${h.color}88)`,borderRadius:4,transition:"width 0.6s"}}/>
+                    </div>
+                  </div>
+                  <div style={{background:"rgba(255,255,255,0.04)",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:12}}>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:10,color:"rgba(255,255,255,0.35)",marginBottom:4}}>إدخال اليوم</div>
+                      {isEditing?(
+                        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                          <input type="number" min="0" step="0.1" autoFocus
+                            style={{...S.inp,marginBottom:0,width:90,padding:"8px 10px",fontSize:15,border:`1.5px solid ${h.color}`,textAlign:"center"}}
+                            value={progInput} onChange={e=>setProgInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveProgress()}/>
+                          <span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{h.unit}</span>
+                          <button onClick={saveProgress} style={{padding:"7px 16px",borderRadius:8,border:"none",background:h.color,color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>حفظ ✓</button>
+                          <button onClick={()=>setEditProg(null)} style={{padding:"7px 10px",borderRadius:8,border:"none",background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.5)",fontSize:12,cursor:"pointer"}}>✕</button>
+                        </div>
+                      ):(
+                        <div style={{display:"flex",alignItems:"center",gap:10}}>
+                          <span style={{fontSize:22,fontWeight:900,color:h.color}}>{todayVal||"—"}</span>
+                          {todayVal>0&&<span style={{fontSize:12,color:"rgba(255,255,255,0.35)"}}>{h.unit}</span>}
+                          <button onClick={()=>{setEditProg({habitId:h.id,date:today});setProgInput(todayVal.toString());}}
+                            style={{padding:"5px 14px",borderRadius:8,border:`1px solid ${h.color}44`,background:"transparent",color:h.color,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                            {todayVal>0?"تعديل":"إدخال"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{textAlign:"center",minWidth:55}}>
+                      <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",marginBottom:2}}>المتبقي</div>
+                      <div style={{fontSize:18,fontWeight:900,color:remaining===0?"#4ECDC4":"rgba(255,255,255,0.6)"}}>{remaining===0?"✅":remaining}</div>
+                      {remaining>0&&<div style={{fontSize:9,color:"rgba(255,255,255,0.3)"}}>{h.unit}</div>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* TAB 1: الأسبوع */}
+        {activeTab===1&&(
+          <div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,...S.card}}>
+              <button onClick={prevWeek} style={{background:"rgba(255,255,255,0.08)",border:"none",color:"#4ECDC4",fontSize:18,cursor:"pointer",padding:"6px 12px",borderRadius:8}}>‹</button>
+              <div style={{textAlign:"center"}}>
+                <div style={{fontWeight:800,fontSize:14}}>{fmtDate(selWeek)} — {fmtDate(weekDates[5])}</div>
+                <div style={{fontSize:10,color:"rgba(255,255,255,0.35)",marginTop:2}}>{selWeek===curWeekStart?"● الأسبوع الحالي":"أسبوع سابق"}</div>
+              </div>
+              <button onClick={nextWeek} disabled={selWeek===curWeekStart}
+                style={{background:selWeek===curWeekStart?"rgba(255,255,255,0.03)":"rgba(255,255,255,0.08)",border:"none",color:selWeek===curWeekStart?"rgba(255,255,255,0.15)":"#4ECDC4",fontSize:18,cursor:selWeek===curWeekStart?"not-allowed":"pointer",padding:"6px 12px",borderRadius:8}}>›</button>
+            </div>
+            {habits.map(h=>{
+              const weekTotal=getWeekTotal(h,selWeek),weekPct=getWeekPct(h,selWeek);
+              return(
+                <div key={h.id} style={{...S.card,border:`1px solid ${h.color}22`}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                    <div style={{width:38,height:38,borderRadius:11,background:h.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{h.icon}</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:800,fontSize:14}}>{h.name}</div>
+                      <div style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>{weekTotal} / {h.weeklyGoal} {h.unit} — {Math.round(weekPct)}%</div>
+                    </div>
+                    <CircleProgress percent={weekPct} size={48} stroke={5} color={h.color}/>
+                  </div>
+                  <div style={{height:5,background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden",marginBottom:12}}>
+                    <div style={{height:"100%",width:Math.min(weekPct,100)+"%",background:h.color,borderRadius:4,transition:"width 0.6s"}}/>
+                  </div>
+                  <div style={{display:"flex",gap:4}}>
+                    {weekDates.map((date,i)=>{
+                      const val=getVal(h,date),isToday=date===today,isFuture=date>today;
+                      const isEditing=editProg?.habitId===h.id&&editProg?.date===date;
+                      const fillPct=h.weeklyGoal>0?Math.min(val/(h.weeklyGoal/6)*100,100):val>0?100:0;
+                      return(
+                        <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                          <div style={{fontSize:9,color:isToday?h.color:"rgba(255,255,255,0.3)",fontWeight:isToday?800:400}}>{WEEK_DAYS[i].slice(0,2)}</div>
+                          <div onClick={()=>{if(!isFuture){setEditProg({habitId:h.id,date});setProgInput(val.toString());}}}
+                            style={{width:"100%",aspectRatio:"1",borderRadius:9,background:"rgba(255,255,255,0.04)",border:`1.5px solid ${isToday?h.color:val>0?h.color+"55":"rgba(255,255,255,0.08)"}`,cursor:isFuture?"default":"pointer",position:"relative",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s"}}>
+                            <div style={{position:"absolute",bottom:0,left:0,right:0,height:fillPct+"%",background:h.color+"44",transition:"height 0.4s"}}/>
+                            <span style={{fontSize:9,fontWeight:800,color:val>0?h.color:"rgba(255,255,255,0.15)",position:"relative",zIndex:1}}>{val>0?val:isFuture?"·":"—"}</span>
+                          </div>
+                          <div style={{fontSize:8,color:"rgba(255,255,255,0.2)"}}>{new Date(date).getDate()}</div>
+                          {isEditing&&(
+                            <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(10px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setEditProg(null)}>
+                              <div onClick={e=>e.stopPropagation()} style={{background:"#1A1F35",borderRadius:22,padding:"24px 20px",width:280,border:`1px solid ${h.color}55`}}>
+                                <div style={{textAlign:"center",marginBottom:16}}>
+                                  <div style={{fontSize:28}}>{h.icon}</div>
+                                  <div style={{fontWeight:800,fontSize:16,marginTop:4}}>{h.name}</div>
+                                  <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginTop:2}}>{WEEK_DAYS[i]} · {fmtDate(date)}</div>
+                                </div>
+                                <input type="number" min="0" step="0.1" autoFocus
+                                  style={{...S.inp,fontSize:22,textAlign:"center",border:`2px solid ${h.color}`,marginBottom:4,padding:"12px"}}
+                                  value={progInput} onChange={e=>setProgInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveProgress()}/>
+                                <div style={{textAlign:"center",fontSize:13,color:"rgba(255,255,255,0.4)",marginBottom:16}}>{h.unit}</div>
+                                <div style={{display:"flex",gap:8}}>
+                                  <button onClick={()=>setEditProg(null)} style={{flex:1,padding:"11px",borderRadius:11,border:"none",background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.6)",fontWeight:700,cursor:"pointer",fontFamily:"inherit",fontSize:14}}>إلغاء</button>
+                                  <button onClick={saveProgress} style={{flex:2,padding:"11px",borderRadius:11,border:"none",background:h.color,color:"#fff",fontWeight:800,cursor:"pointer",fontFamily:"inherit",fontSize:14}}>حفظ ✓</button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* TAB 2: الإحصائيات */}
+        {activeTab===2&&(
+          <div>
+            <div style={S.card}>
+              <div style={{fontSize:13,fontWeight:800,color:"rgba(255,255,255,0.6)",marginBottom:10}}>📅 الفترة الزمنية</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+                {[["month","الشهر"],["3m","3 أشهر"],["6m","6 أشهر"],["custom","مخصص"]].map(([p,l])=>(
+                  <button key={p} style={S.pd(statsPeriod===p)} onClick={()=>setStatsPd(p)}>{l}</button>
+                ))}
+              </div>
+              {statsPeriod==="custom"&&(
+                <div style={{display:"flex",gap:8,marginBottom:10}}>
+                  <div style={{flex:1}}><div style={S.lbl}>من</div><input type="date" style={{...S.inp,marginBottom:0,fontSize:13}} value={statsFrom} onChange={e=>setStatsFrom(getWeekStart(e.target.value))}/></div>
+                  <div style={{flex:1}}><div style={S.lbl}>إلى</div><input type="date" style={{...S.inp,marginBottom:0,fontSize:13}} value={statsTo} onChange={e=>setStatsTo(getWeekStart(e.target.value))}/></div>
+                </div>
+              )}
+              <div style={S.lbl}>العادة</div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                <button style={S.pd(statsHabit==="all")} onClick={()=>setStatsHabit("all")}>الكل</button>
+                {habits.map(h=>(
+                  <button key={h.id} style={{...S.pd(statsHabit===h.id.toString()),background:statsHabit===h.id.toString()?h.color:"rgba(255,255,255,0.08)",color:statsHabit===h.id.toString()?"#fff":"rgba(255,255,255,0.5)"}} onClick={()=>setStatsHabit(h.id.toString())}>{h.icon} {h.name}</button>
+                ))}
+              </div>
+              <div style={{fontSize:10,color:"rgba(255,255,255,0.25)",marginTop:8}}>{statsWeeks.length} أسبوع في الفترة المحددة</div>
+            </div>
+
+            {habits.length===0?<div style={{textAlign:"center",padding:"60px 0",color:"rgba(255,255,255,0.25)"}}><div style={{fontSize:48}}>📊</div></div>:(
+              statsHabits.map(h=>{
+                const weeklyData=statsWeeks.map(w=>({ws:w,pct:getWeekPct(h,w),total:getWeekTotal(h,w)}));
+                const avgPct=weeklyData.length?weeklyData.reduce((a,b)=>a+b.pct,0)/weeklyData.length:0;
+                const bestWeek=weeklyData.reduce((a,b)=>b.pct>a.pct?b:a,{pct:0,ws:""});
+                const totalVal=weeklyData.reduce((a,b)=>a+b.total,0);
+                const achieved=weeklyData.filter(w=>w.pct>=100).length;
+                const chartData=statsWeeks.slice(-8).map((w,i)=>({label:`أ${Math.max(statsWeeks.length-8,0)+i+1}`,value:Math.round(getWeekTotal(h,w)),isCurrent:w===curWeekStart}));
+                const last4=statsWeeks.slice(-4).reduce((a,w)=>a+getWeekPct(h,w),0)/Math.max(Math.min(statsWeeks.length,4),1);
+                const prev4=statsWeeks.slice(-8,-4).reduce((a,w)=>a+getWeekPct(h,w),0)/Math.max(Math.min(statsWeeks.length-4,4),1);
+                const trend=last4-prev4;
+                return(
+                  <div key={h.id} style={{...S.card,border:`1px solid ${h.color}22`,marginBottom:14}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                      <div style={{width:42,height:42,borderRadius:12,background:h.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,boxShadow:`0 0 0 1px ${h.color}44`}}>{h.icon}</div>
+                      <div style={{flex:1}}>
+                        <div style={{fontWeight:800,fontSize:15}}>{h.name}</div>
+                        <div style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>الهدف: {h.weeklyGoal} {h.unit} / أسبوع</div>
+                      </div>
+                      {statsWeeks.length>=8&&(
+                        <div style={{textAlign:"center",padding:"5px 10px",borderRadius:10,background:trend>0?"rgba(78,205,196,0.15)":trend<0?"rgba(255,107,107,0.15)":"rgba(255,255,255,0.05)"}}>
+                          <div style={{fontSize:14,fontWeight:900,color:trend>0?"#4ECDC4":trend<0?"#FF6B6B":"rgba(255,255,255,0.4)"}}>{trend>0?"↑":trend<0?"↓":"—"}{Math.abs(Math.round(trend))}%</div>
+                          <div style={{fontSize:9,color:"rgba(255,255,255,0.3)"}}>الاتجاه</div>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{display:"flex",gap:8,marginBottom:14}}>
+                      {[{label:"متوسط الإنجاز",value:Math.round(avgPct)+"%",color:avgPct>=80?"#4ECDC4":avgPct>=50?"#F7DC6F":"#FF6B6B"},{label:"أسابيع مكتملة",value:`${achieved}/${statsWeeks.length}`,color:h.color},{label:"الإجمالي",value:`${totalVal} ${h.unit}`,color:"rgba(255,255,255,0.7)"}].map((k,i)=>(
+                        <div key={i} style={{flex:1,background:"rgba(255,255,255,0.04)",borderRadius:12,padding:"10px 6px",textAlign:"center"}}>
+                          <div style={{fontSize:14,fontWeight:900,color:k.color,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.value}</div>
+                          <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",marginTop:2}}>{k.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                    {chartData.some(d=>d.value>0)&&(
+                      <div style={{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:"12px 10px",marginBottom:12}}>
+                        <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginBottom:6}}>📊 التقدم الأسبوعي ({h.unit})</div>
+                        <BarChart data={chartData} color={h.color}/>
+                      </div>
+                    )}
+                    <div style={{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:"12px 10px"}}>
+                      <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginBottom:10}}>📈 نسبة الإنجاز الأسبوعي</div>
+                      {statsWeeks.slice(-6).reverse().map((w)=>{
+                        const wDates=getWeekDates(w),total=getWeekTotal(h,w),pct=getWeekPct(h,w),isCur=w===curWeekStart;
+                        return <MiniBar key={w} value={total} max={h.weeklyGoal} color={h.color} label={isCur?"الأسبوع الحالي ●":`${fmtDate(w)} — ${fmtDate(wDates[5])}`} sublabel={`${Math.round(pct)}% · ${total}/${h.weeklyGoal} ${h.unit}`}/>;
+                      })}
+                    </div>
+                    {bestWeek.ws&&<div style={{marginTop:10,padding:"8px 12px",borderRadius:10,background:`${h.color}15`,border:`1px solid ${h.color}33`,fontSize:11,color:"rgba(255,255,255,0.5)"}}>🏆 أفضل أسبوع: <span style={{color:h.color,fontWeight:800}}>{fmtDate(bestWeek.ws)}</span> بنسبة <span style={{color:h.color,fontWeight:800}}>{Math.round(bestWeek.pct)}%</span></div>}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {/* TAB 3: الإعدادات */}
+        {activeTab===3&&(
+          <div>
+            {habits.length===0&&<div style={{textAlign:"center",padding:"50px 0",color:"rgba(255,255,255,0.25)"}}><div style={{fontSize:44}}>⚙️</div><div style={{marginTop:10}}>لا توجد عادات بعد</div></div>}
+            {habits.map(h=>(
+              <div key={h.id} style={{...S.card,border:`1px solid ${h.color}33`,display:"flex",alignItems:"center",gap:12}}>
+                <div style={{width:42,height:42,borderRadius:12,background:h.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>{h.icon}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:800,fontSize:14}}>{h.name}</div>
+                  <div style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:2}}>الهدف: {h.weeklyGoal} {h.unit} / أسبوع</div>
+                </div>
+                <button onClick={()=>deleteHabit(h.id)} style={{padding:"7px 14px",borderRadius:8,border:"none",background:"rgba(255,80,80,0.15)",color:"#FF6B6B",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>حذف</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ADD MODAL */}
+      {showAdd&&(
+        <div onClick={()=>setShowAdd(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",backdropFilter:"blur(14px)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#1A1F35,#12162A)",borderRadius:"22px 22px 0 0",padding:"22px 18px 40px",width:"100%",maxWidth:540,border:"1px solid rgba(255,255,255,0.08)",borderBottom:"none",animation:"slideUp 0.3s cubic-bezier(.4,0,.2,1)"}}>
+            <div style={{fontWeight:900,fontSize:16,marginBottom:18,textAlign:"center"}}>إضافة عادة جديدة 🌟</div>
+            <div style={S.lbl}>اسم العادة *</div>
+            <input style={S.inp} placeholder="مثال: شرب الماء" value={newHabit.name} onChange={e=>setNewHabit(p=>({...p,name:e.target.value}))}/>
+            <div style={{display:"flex",gap:10}}>
+              <div style={{flex:1}}><div style={S.lbl}>الهدف الأسبوعي *</div><input type="number" min="1" step="0.1" style={S.inp} placeholder="مثال: 14" value={newHabit.weeklyGoal} onChange={e=>setNewHabit(p=>({...p,weeklyGoal:e.target.value}))}/></div>
+              <div style={{flex:1}}><div style={S.lbl}>وحدة القياس</div><input style={S.inp} placeholder="كأس، كغ، دقيقة..." value={newHabit.unit} onChange={e=>setNewHabit(p=>({...p,unit:e.target.value}))}/></div>
+            </div>
+            <div style={S.lbl}>الأيقونة</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
+              {ICONS.map(ic=><button key={ic} onClick={()=>setNewHabit(p=>({...p,icon:ic}))} style={{width:38,height:38,borderRadius:9,border:"none",cursor:"pointer",fontSize:17,background:newHabit.icon===ic?"rgba(78,205,196,0.25)":"rgba(255,255,255,0.07)",outline:newHabit.icon===ic?"2px solid #4ECDC4":"none"}}>{ic}</button>)}
+            </div>
+            <div style={S.lbl}>اللون</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:20}}>
+              {COLORS.map((c,i)=><button key={i} onClick={()=>setNewHabit(p=>({...p,color:c}))} style={{width:28,height:28,borderRadius:8,border:"none",cursor:"pointer",background:c,outline:newHabit.color===c?"3px solid #fff":"none",outlineOffset:2,transform:newHabit.color===c?"scale(1.2)":"scale(1)",transition:"all 0.15s"}}/>)}
+            </div>
+            <button onClick={addHabit} disabled={!newHabit.name.trim()||!newHabit.weeklyGoal}
+              style={{width:"100%",padding:"13px",borderRadius:12,border:"none",background:newHabit.name.trim()&&newHabit.weeklyGoal?"linear-gradient(135deg,#4ECDC4,#45B7D1)":"rgba(255,255,255,0.08)",color:newHabit.name.trim()&&newHabit.weeklyGoal?"#fff":"rgba(255,255,255,0.3)",fontSize:15,fontWeight:800,cursor:newHabit.name.trim()&&newHabit.weeklyGoal?"pointer":"not-allowed",fontFamily:"inherit",transition:"all 0.3s"}}>
+              إضافة العادة ✨
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("app")).render(<App/>);
+</script>
+<script>
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').catch(()=>{});
+}
+</script>
+</body>
+</html>
